@@ -1,0 +1,247 @@
+!========================================================
+! LAB : Redistribution OSPF ↔ BGP avec Tunnel GRE
+!========================================================
+! Objectif :
+! - Réseau interne OSPF (AS 100) : R1 à R4
+! - Réseau externe BGP (AS 200) : R5 à R8
+! - Tunnel GRE entre R1 et R8 (11.11.11.0/24)
+! - Communication PC1 ↔ PC2
+!========================================================
+
+!========================================================
+! ROUTER 1  (OSPF – AS 100)
+!========================================================
+
+interface e0/0
+ description LAN PC1 - 10.10.10.0/24
+ ip address 10.10.10.1 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien vers R2 - 20.20.20.0/24
+ ip address 20.20.20.1 255.255.255.0
+ no shutdown
+exit
+
+interface e0/2
+ description Lien vers R3 - 30.30.30.0/24
+ ip address 30.30.30.1 255.255.255.0
+ no shutdown
+exit
+
+! DHCP pour PC1
+ip dhcp excluded-address 10.10.10.1
+ip dhcp pool LAN_R1
+ network 10.10.10.0 255.255.255.0
+ default-router 10.10.10.1
+exit
+
+! OSPF
+router ospf 1
+ router-id 1.1.1.1
+ network 10.10.10.0 0.0.0.255 area 0
+ network 20.20.20.0 0.0.0.255 area 0
+ network 30.30.30.0 0.0.0.255 area 0
+exit
+
+! Tunnel GRE vers R8
+interface tunnel0
+ description Tunnel GRE vers R8
+ ip address 11.11.11.1 255.255.255.0
+ tunnel source 20.20.20.1
+ tunnel destination 90.90.90.2
+exit
+
+! Route vers le LAN distant via le tunnel
+ip route 100.100.100.0 255.255.255.0 tunnel0
+
+!========================================================
+! ROUTER 2  (OSPF – AS 100)
+!========================================================
+
+interface e0/0
+ description Lien vers R1 - 20.20.20.0/24
+ ip address 20.20.20.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien vers R4 - 40.40.40.0/24
+ ip address 40.40.40.1 255.255.255.0
+ no shutdown
+exit
+
+router ospf 1
+ router-id 2.2.2.2
+ network 20.20.20.0 0.0.0.255 area 0
+ network 40.40.40.0 0.0.0.255 area 0
+exit
+
+!========================================================
+! ROUTER 3  (OSPF – AS 100)
+!========================================================
+
+interface e0/0
+ description Lien vers R1 - 30.30.30.0/24
+ ip address 30.30.30.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien vers R4 - 50.50.50.0/24
+ ip address 50.50.50.1 255.255.255.0
+ no shutdown
+exit
+
+router ospf 1
+ router-id 3.3.3.3
+ network 30.30.30.0 0.0.0.255 area 0
+ network 50.50.50.0 0.0.0.255 area 0
+exit
+
+!========================================================
+! ROUTER 4  (OSPF ↔ eBGP – AS 100)
+!========================================================
+
+interface e0/0
+ description Lien vers R2 - 40.40.40.0/24
+ ip address 40.40.40.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien vers R3 - 50.50.50.0/24
+ ip address 50.50.50.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/2
+ description Lien eBGP vers R5 - 60.60.60.0/24
+ ip address 60.60.60.1 255.255.255.0
+ no shutdown
+exit
+
+router ospf 1
+ router-id 4.4.4.4
+ network 40.40.40.0 0.0.0.255 area 0
+ network 50.50.50.0 0.0.0.255 area 0
+exit
+
+router bgp 100
+ neighbor 60.60.60.2 remote-as 200
+ network 60.60.60.0 mask 255.255.255.0
+exit
+
+! Redistribution
+router ospf 1
+ redistribute bgp 100 subnets
+ default-information originate always metric 20
+exit
+
+router bgp 100
+ redistribute ospf 1 match internal external 1 external 2
+exit
+
+!========================================================
+! ROUTER 5  (BGP – AS 200 – Route Reflector)
+!========================================================
+
+interface e0/0
+ description Lien eBGP vers R4
+ ip address 60.60.60.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien iBGP vers R6
+ ip address 70.70.70.1 255.255.255.0
+ no shutdown
+exit
+
+router bgp 200
+ neighbor 60.60.60.1 remote-as 100
+ neighbor 70.70.70.2 remote-as 200
+ neighbor 70.70.70.2 route-reflector-client
+ network 60.60.60.0 mask 255.255.255.0
+ network 70.70.70.0 mask 255.255.255.0
+exit
+
+!========================================================
+! ROUTER 6  (BGP – AS 200)
+!========================================================
+
+interface e0/0
+ description Lien iBGP vers R5
+ ip address 70.70.70.2 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien iBGP vers R7
+ ip address 80.80.80.1 255.255.255.0
+ no shutdown
+exit
+
+router bgp 200
+ neighbor 70.70.70.1 remote-as 200
+ neighbor 80.80.80.2 remote-as 200
+exit
+
+!========================================================
+! ROUTER 7  (BGP – AS 200)
+!========================================================
+
+interface e0/0
+ description Lien iBGP vers R8
+ ip address 90.90.90.1 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien iBGP vers R6
+ ip address 80.80.80.2 255.255.255.0
+ no shutdown
+exit
+
+router bgp 200
+ neighbor 80.80.80.1 remote-as 200
+ neighbor 90.90.90.2 remote-as 200
+exit
+
+!========================================================
+! ROUTER 8  (BGP – AS 200)
+!========================================================
+
+interface e0/0
+ description LAN PC2 - 100.100.100.0/24
+ ip address 100.100.100.1 255.255.255.0
+ no shutdown
+exit
+
+interface e0/1
+ description Lien iBGP vers R7
+ ip address 90.90.90.2 255.255.255.0
+ no shutdown
+exit
+
+ip dhcp excluded-address 100.100.100.1
+ip dhcp pool LAN_R8
+ network 100.100.100.0 255.255.255.0
+ default-router 100.100.100.1
+exit
+
+router bgp 200
+ neighbor 90.90.90.1 remote-as 200
+exit
+
+! Tunnel GRE vers R1
+interface tunnel0
+ description Tunnel GRE vers R1
+ ip address 11.11.11.2 255.255.255.0
+ tunnel source 90.90.90.2
+ tunnel destination 20.20.20.1
+exit
+
+! Route vers LAN interne
+ip route 10.10.10.0 255.255.255.0 tunnel0
